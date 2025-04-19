@@ -9,7 +9,7 @@
     },
     "repository": {
       "type": "git",
-      "url": "git+https://github.com/airdropinsiders/R2Money-Auto-Bot.git"
+      "url": "git+https://github.com/BidyutRoy2/R2Money.git"
     },
     "keywords": [
       "ethereum",
@@ -20,12 +20,12 @@
       "r2money",
       "sepolia"
     ],
-    "author": "Airdrop Insiders",
+    "author": "HiddenGem",
     "license": "MIT",
     "bugs": {
-      "url": "https://github.com/airdropinsiders/R2Money-Auto-Bot/issues"
+      "url": "https://github.com/BidyutRoy2/R2Money/issues"
     },
-    "homepage": "https://github.com/airdropinsiders/R2Money-Auto-Bot#readme",
+    "homepage": "https://github.com/BidyutRoy2/R2Money#readme",
     "dependencies": {
       "dotenv": "^16.3.1",
       "ethers": "^5.7.2",
