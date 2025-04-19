@@ -655,7 +655,7 @@ async function handleStakeR2USD(wallets) {
 async function main() {
   try {
     console.log('\n----------------------------------------');
-    console.log(`${colorText(' R2 Money - HiddenGem ', COLORS.CYAN)}`);
+    console.log(`${colorText(' R2 Money - HiddenGem : t.me/hiddengemnews ', COLORS.CYAN)}`);
     console.log('----------------------------------------');
     
     console.log(`${EMOJI.INFO} ${colorText(`Loaded ${proxies.length} proxies from proxies.txt`, COLORS.GREEN)}`);
