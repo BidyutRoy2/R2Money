@@ -1,5 +1,7 @@
 # R2Money-Auto-Bot
 
+![image](https://github.com/user-attachments/assets/57c43ce8-2c7c-4002-b4b8-63967f0b2166)
+
 An automated bot for interacting with the R2 Money protocol on the Sepolia testnet. This bot allows users to perform swaps between USDC and R2USD tokens, as well as stake R2USD to receive sR2USD tokens.
 
 # Register [HERE](https://t.me/hiddengemnews/13480)
