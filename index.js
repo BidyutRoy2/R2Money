@@ -10,7 +10,7 @@ const COLORS = {
   RED: '\x1b[31m',
   WHITE: '\x1b[37m',
   GRAY: '\x1b[90m',
-  CYAN : '\x1b[36m',
+  CYAN: '\x1b[36m',
   RESET: '\x1b[0m'
 };
 
@@ -25,7 +25,8 @@ const EMOJI = {
   SWAP: '🔄',
   STAKE: '📌',
   WALLET: '👛',
-  LOADING: '⏳'
+  LOADING: '⏳',
+  CLOCK: '⏰'
 };
 
 let proxies = [];
@@ -81,7 +82,7 @@ const R2USD_ADDRESS = '0x20c54c5f742f123abb49a982bfe0af47edb38756';
 const SR2USD_ADDRESS = '0xbd6b25c4132f09369c354bee0f7be777d7d434fa';
 const USDC_TO_R2USD_CONTRACT = '0x20c54c5f742f123abb49a982bfe0af47edb38756';
 const R2USD_TO_USDC_CONTRACT = '0x07abd582df3d3472aa687a0489729f9f0424b1e3';
-const STAKE_R2USD_CONTRACT = '0xbd6b25c4132f09369c354bee0f7be777d7d434fa';
+const STAKE_R2USD_CONTRACT = '0xbd6b25c4132f09369c354bee0f7be777d7d434fa'; 
 
 const USDC_TO_R2USD_METHOD_ID = '0x095e7a95';
 const R2USD_TO_USDC_METHOD_ID = '0x3df02124';
@@ -208,6 +209,9 @@ async function checkEthBalance(wallet) {
 
 async function approveToken(wallet, tokenAddress, spenderAddress, amount) {
   try {
+    if (!ethers.utils.isAddress(spenderAddress)) {
+      throw new Error(`Invalid spender address: ${spenderAddress}`);
+    }
     const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, wallet);
     const decimals = await tokenContract.decimals();
     const currentAllowance = await tokenContract.allowance(wallet.address, spenderAddress);
@@ -344,6 +348,10 @@ async function swapR2USDtoUSDC(wallet, amount) {
 
 async function stakeR2USD(wallet, amount) {
   try {
+    if (!ethers.utils.isAddress(STAKE_R2USD_CONTRACT)) {
+      throw new Error(`Invalid staking contract address: ${STAKE_R2USD_CONTRACT}`);
+    }
+
     const r2usdBalance = await checkBalance(wallet, R2USD_ADDRESS);
     console.log(`${EMOJI.MONEY} ${colorText(`Current R2USD balance: ${r2usdBalance}`, COLORS.WHITE)}`);
     if (parseFloat(r2usdBalance) < parseFloat(amount)) {
@@ -403,15 +411,179 @@ async function stakeR2USD(wallet, amount) {
   }
 }
 
+let dailyTasks = {
+  usdcToR2usd: { enabled: false, amount: 0, numTxs: 0 },
+  r2usdToUsdc: { enabled: false, amount: 0, numTxs: 0 },
+  stakeR2usd: { enabled: false, amount: 0, numTxs: 0 },
+};
+
+async function executeDailyTasks(wallets) {
+  console.log(`\n${EMOJI.INFO} ${colorText('Starting daily tasks execution...', COLORS.WHITE)}`);
+  for (const wallet of wallets) {
+    if (dailyTasks.usdcToR2usd.enabled) {
+      await executeDailyTask(wallet, 'USDC to R2USD', dailyTasks.usdcToR2usd.amount, dailyTasks.usdcToR2usd.numTxs);
+    }
+    if (dailyTasks.r2usdToUsdc.enabled) {
+      await executeDailyTask(wallet, 'R2USD to USDC', dailyTasks.r2usdToUsdc.amount, dailyTasks.r2usdToUsdc.numTxs);
+    }
+    if (dailyTasks.stakeR2usd.enabled) {
+      await executeDailyTask(wallet, 'Stake R2USD', dailyTasks.stakeR2usd.amount, dailyTasks.stakeR2usd.numTxs);
+    }
+  }
+  console.log(`${EMOJI.SUCCESS} ${colorText('Daily tasks execution completed.', COLORS.GREEN)}`);
+}
+
+async function executeDailyTask(wallet, taskType, amount, numTxs) {
+  console.log(`\n${EMOJI.LOADING} ${colorText(`Executing daily ${taskType} for wallet ${wallet.address}`, COLORS.YELLOW)}`);
+  for (let i = 1; i <= numTxs; i++) {
+    console.log(`${EMOJI.LOADING} ${colorText(`Transaction ${i} of ${numTxs} (Amount: ${amount})`, COLORS.YELLOW)}`);
+    let success = false;
+    if (taskType === 'USDC to R2USD') {
+      success = await swapUSDCtoR2USD(wallet, amount);
+    } else if (taskType === 'R2USD to USDC') {
+      success = await swapR2USDtoUSDC(wallet, amount);
+    } else if (taskType === 'Stake R2USD') {
+      success = await stakeR2USD(wallet, amount);
+    }
+    if (success) {
+      console.log(`${EMOJI.SUCCESS} ${colorText(`Transaction ${i} completed successfully!`, COLORS.GREEN)}`);
+    } else {
+      console.error(`${EMOJI.ERROR} ${colorText(`Transaction ${i} failed.`, COLORS.RED)}`);
+    }
+  }
+  console.log(`${EMOJI.SUCCESS} ${colorText(`Completed ${numTxs} ${taskType} transaction(s) for wallet ${wallet.address}.`, COLORS.GREEN)}`);
+}
+
+function startCountdown(wallets, durationMs) {
+  const endTime = Date.now() + durationMs;
+  const interval = setInterval(() => {
+    const remainingMs = endTime - Date.now();
+    if (remainingMs <= 0) {
+      clearInterval(interval);
+      console.log(`${EMOJI.CLOCK} ${colorText('Countdown finished! Starting next daily tasks...', COLORS.GREEN)}`);
+      executeDailyTasks(wallets).then(() => startCountdown(wallets, durationMs));
+    } else {
+      const hours = Math.floor(remainingMs / (1000 * 60 * 60));
+      const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000);
+      process.stdout.write(`\r${EMOJI.CLOCK} ${colorText(`Next execution in: ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`, COLORS.CYAN)}`);
+    }
+  }, 1000);
+}
+
+async function setupDailySwapAndStake(wallets) {
+  try {
+    const selectedWallets = await selectWallet(wallets);
+    const isAllWallets = Array.isArray(selectedWallets);
+    const walletList = isAllWallets ? selectedWallets : [selectedWallets];
+
+    console.log(`\n${colorText('Setup Daily Swap and Stake', COLORS.WHITE)}`);
+    console.log(`${colorText('Select tasks to schedule (enter "skip" to keep current settings):', COLORS.YELLOW)}`);
+
+    console.log(`\n${colorText('1. USDC to R2USD Swap', COLORS.YELLOW)}`);
+    rl.question(`${colorText('Enter amount of USDC to swap daily (or "skip"): ', COLORS.WHITE)}`, async (usdcAmount) => {
+      if (usdcAmount.toLowerCase() !== 'skip') {
+        const parsedUsdcAmount = parseFloat(usdcAmount);
+        if (isNaN(parsedUsdcAmount) || parsedUsdcAmount <= 0) {
+          console.error(`${EMOJI.ERROR} ${colorText('Invalid amount. Skipping USDC to R2USD setup.', COLORS.RED)}`);
+        } else {
+          rl.question(`${colorText('Enter number of daily swap transactions: ', COLORS.WHITE)}`, async (usdcNumTxs) => {
+            const parsedUsdcNumTxs = parseInt(usdcNumTxs);
+            if (isNaN(parsedUsdcNumTxs) || parsedUsdcNumTxs <= 0) {
+              console.error(`${EMOJI.ERROR} ${colorText('Invalid number. Skipping USDC to R2USD setup.', COLORS.RED)}`);
+            } else {
+              dailyTasks.usdcToR2usd = { enabled: true, amount: parsedUsdcAmount, numTxs: parsedUsdcNumTxs };
+              console.log(`${EMOJI.SUCCESS} ${colorText(`Daily USDC to R2USD swap set: ${parsedUsdcAmount} USDC, ${parsedUsdcNumTxs} transactions`, COLORS.GREEN)}`);
+            }
+            proceedToR2usdToUsdcSetup(walletList);
+          });
+          return;
+        }
+      }
+      proceedToR2usdToUsdcSetup(walletList);
+    });
+  } catch (error) {
+    console.error(`${EMOJI.ERROR} ${colorText('Error during daily swap and stake setup:', COLORS.RED)}`, error);
+    await showMenu(wallets);
+  }
+}
+
+async function proceedToR2usdToUsdcSetup(walletList) {
+  console.log(`\n${colorText('2. R2USD to USDC Swap', COLORS.YELLOW)}`);
+  rl.question(`${colorText('Enter amount of R2USD to swap daily (or "skip"): ', COLORS.WHITE)}`, async (r2usdAmount) => {
+    if (r2usdAmount.toLowerCase() !== 'skip') {
+      const parsedR2usdAmount = parseFloat(r2usdAmount);
+      if (isNaN(parsedR2usdAmount) || parsedR2usdAmount <= 0) {
+        console.error(`${EMOJI.ERROR} ${colorText('Invalid amount. Skipping R2USD to USDC setup.', COLORS.RED)}`);
+      } else {
+        rl.question(`${colorText('Enter number of daily swap transactions: ', COLORS.WHITE)}`, async (r2usdNumTxs) => {
+          const parsedR2usdNumTxs = parseInt(r2usdNumTxs);
+          if (isNaN(parsedR2usdNumTxs) || parsedR2usdNumTxs <= 0) {
+            console.error(`${EMOJI.ERROR} ${colorText('Invalid number. Skipping R2USD to USDC setup.', COLORS.RED)}`);
+          } else {
+            dailyTasks.r2usdToUsdc = { enabled: true, amount: parsedR2usdAmount, numTxs: parsedR2usdNumTxs };
+            console.log(`${EMOJI.SUCCESS} ${colorText(`Daily R2USD to USDC swap set: ${parsedR2usdAmount} R2USD, ${parsedR2usdNumTxs} transactions`, COLORS.GREEN)}`);
+          }
+          proceedToStakeSetup(walletList);
+        });
+        return;
+      }
+    }
+    proceedToStakeSetup(walletList);
+  });
+}
+
+async function proceedToStakeSetup(walletList) {
+  console.log(`\n${colorText('3. Stake R2USD', COLORS.YELLOW)}`);
+  rl.question(`${colorText('Enter amount of R2USD to stake daily (or "skip"): ', COLORS.WHITE)}`, async (stakeAmount) => {
+    if (stakeAmount.toLowerCase() !== 'skip') {
+      const parsedStakeAmount = parseFloat(stakeAmount);
+      if (isNaN(parsedStakeAmount) || parsedStakeAmount <= 0) {
+        console.error(`${EMOJI.ERROR} ${colorText('Invalid amount. Skipping Stake R2USD setup.', COLORS.RED)}`);
+      } else {
+        rl.question(`${colorText('Enter number of daily staking transactions: ', COLORS.WHITE)}`, async (stakeNumTxs) => {
+          const parsedStakeNumTxs = parseInt(stakeNumTxs);
+          if (isNaN(parsedStakeNumTxs) || parsedStakeNumTxs <= 0) {
+            console.error(`${EMOJI.ERROR} ${colorText('Invalid number. Skipping Stake R2USD setup.', COLORS.RED)}`);
+          } else {
+            dailyTasks.stakeR2usd = { enabled: true, amount: parsedStakeAmount, numTxs: parsedStakeNumTxs };
+            console.log(`${EMOJI.SUCCESS} ${colorText(`Daily Stake R2USD set: ${parsedStakeAmount} R2USD, ${parsedStakeNumTxs} transactions`, COLORS.GREEN)}`);
+          }
+          startDailyTasks(walletList);
+        });
+        return;
+      }
+    }
+    startDailyTasks(walletList);
+  });
+}
+
+async function startDailyTasks(wallets) {
+  console.log(`\n${EMOJI.SUCCESS} ${colorText('Daily tasks configured. Executing tasks immediately...', COLORS.GREEN)}`);
+  
+  await executeDailyTasks(wallets);
+
+  console.log(`${EMOJI.INFO} ${colorText('Scheduling daily tasks every 24 hours...', COLORS.GREEN)}`);
+  const DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000; 
+  startCountdown(wallets, DAILY_INTERVAL_MS);
+
+  setInterval(() => {
+    executeDailyTasks(wallets);
+  }, DAILY_INTERVAL_MS);
+
+  await showMenu(wallets);
+}
+
 async function showMenu(wallets) {
   console.log(`\n${colorText('========== USDC/R2USD/sR2USD Bot Menu ==========', COLORS.WHITE)}`);
   console.log(`1. ${EMOJI.SWAP} ${colorText('Swap USDC to R2USD', COLORS.YELLOW)}`);
   console.log(`2. ${EMOJI.SWAP} ${colorText('Swap R2USD to USDC', COLORS.YELLOW)}`);
   console.log(`3. ${EMOJI.STAKE} ${colorText('Stake R2USD to sR2USD', COLORS.YELLOW)}`);
   console.log(`4. ${EMOJI.MONEY} ${colorText('Check balances', COLORS.YELLOW)}`);
-  console.log(`5. ${colorText('Exit', COLORS.YELLOW)}`);
+  console.log(`5. ${colorText('Setup Daily Swap and Stake', COLORS.YELLOW)}`);
+  console.log(`6. ${colorText('Exit', COLORS.YELLOW)}`);
   console.log(`${colorText('=============================================', COLORS.WHITE)}`);
-  rl.question(`${colorText('\nSelect an option (1-5): ', COLORS.WHITE)}`, async (option) => {
+  rl.question(`${colorText('\nSelect an option (1-6): ', COLORS.WHITE)}`, async (option) => {
     switch (option) {
       case '1':
         await handleUSDCtoR2USDSwap(wallets);
@@ -426,11 +598,14 @@ async function showMenu(wallets) {
         await displayBalances(wallets);
         break;
       case '5':
+        await setupDailySwapAndStake(wallets);
+        break;
+      case '6':
         console.log(`${EMOJI.INFO} ${colorText('Exiting the application!', COLORS.GRAY)}`);
         rl.close();
         return;
       default:
-        console.log(`${EMOJI.WARNING} ${colorText('Invalid option. Please select a number between 1 and 5.', COLORS.YELLOW)}`);
+        console.log(`${EMOJI.WARNING} ${colorText('Invalid option. Please select a number between 1 and 6.', COLORS.YELLOW)}`);
         await showMenu(wallets);
         break;
     }
@@ -655,7 +830,7 @@ async function handleStakeR2USD(wallets) {
 async function main() {
   try {
     console.log('\n----------------------------------------');
-    console.log(`${colorText(' R2 Money - HiddenGem : t.me/hiddengemnews ', COLORS.CYAN)}`);
+    console.log(`${colorText('    R2 Money - HiddenGem  t.me/hiddengemnews ', COLORS.CYAN)}`);
     console.log('----------------------------------------');
     
     console.log(`${EMOJI.INFO} ${colorText(`Loaded ${proxies.length} proxies from proxies.txt`, COLORS.GREEN)}`);
